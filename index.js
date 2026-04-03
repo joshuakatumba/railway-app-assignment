@@ -10,7 +10,9 @@ app.use(express.json());
 // ── Postgres connection ────────────────────────────────────────
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost') 
+    ? { rejectUnauthorized: false } 
+    : false,
 });
 
 // ── Consolidated Frontend (HTML + CSS + JS) ───────────────────
@@ -169,10 +171,15 @@ app.get('/', (req, res) => res.send(HTML_CONTENT));
 
 app.get('/api/health', async (req, res) => {
   try {
-    await pool.query('SELECT 1');
+    // Attempt a quick query with a timeout
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000));
+    const query = pool.query('SELECT 1');
+    await Promise.race([query, timeout]);
     res.status(200).json({ status: 'ok', database: 'connected' });
   } catch (err) {
-    res.status(500).json({ status: 'error', database: 'disconnected', message: err.message });
+    // If DB is disconnected, still return 200 so Railway doesn't kill the app during provisioning
+    // but include the error details.
+    res.status(200).json({ status: 'ok', database: 'disconnected', message: err.message });
   }
 });
 
@@ -226,7 +233,12 @@ async function initDB() {
   finally { client.release(); }
 }
 
-app.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  if (process.env.DATABASE_URL) await initDB();
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`🚀 Server listening on http://0.0.0.0:${PORT}`);
+  if (process.env.DATABASE_URL) {
+    console.log('📡 DATABASE_URL found, initializing database...');
+    initDB().catch(err => console.error('❌ Async DB Init Error:', err.message));
+  } else {
+    console.warn('⚠️ No DATABASE_URL found in environment.');
+  }
 });
