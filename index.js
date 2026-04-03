@@ -215,6 +215,16 @@ const HTML_CONTENT = `
       0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }
       50% { opacity: 0.6; box-shadow: 0 0 16px rgba(16, 185, 129, 0.4); }
     }
+    .status-pill.disconnected {
+      background: var(--accent-rose-soft);
+      border-color: rgba(244, 63, 94, 0.2);
+      color: var(--accent-rose);
+    }
+    .status-pill.disconnected .status-dot {
+      background: var(--accent-rose);
+      box-shadow: 0 0 8px rgba(244, 63, 94, 0.6);
+      animation: none;
+    }
 
     /* ── Stats Grid ── */
     .stats-grid {
@@ -387,7 +397,7 @@ const HTML_CONTENT = `
       box-shadow: 0 6px 24px rgba(124, 58, 237, 0.35), inset 0 1px 0 rgba(255,255,255,0.15);
       transform: translateY(-1px);
     }
-    .btn-accent:active { transform: translateY(0); }
+    .btn-accent:active { transform: scale(0.97); }
     .btn-ghost {
       background: transparent;
       color: var(--text-secondary);
@@ -622,9 +632,9 @@ const HTML_CONTENT = `
       </div>
       <h1 class="app-title"><span class="gradient-text">Task Manager</span></h1>
       <p class="app-subtitle">Full-stack CRUD app deployed on Railway PaaS</p>
-      <div class="status-pill">
+      <div class="status-pill" id="dbStatusPill">
         <span class="status-dot"></span>
-        PostgreSQL Connected
+        <span id="dbStatusText">Checking Connection...</span>
       </div>
     </header>
 
@@ -747,67 +757,142 @@ const HTML_CONTENT = `
     const modalOverlay = document.getElementById('modalOverlay');
     const editForm = document.getElementById('editForm');
 
-    document.addEventListener('DOMContentLoaded', fetchTasks);
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchTasks();
+      checkHealth();
+      setInterval(checkHealth, 30000); // Check every 30s
+    });
+
+    async function checkHealth() {
+      const pill = document.getElementById('dbStatusPill');
+      const text = document.getElementById('dbStatusText');
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        if (data.database === 'connected') {
+          pill.classList.remove('disconnected');
+          text.textContent = 'PostgreSQL Connected';
+        } else {
+          pill.classList.add('disconnected');
+          text.textContent = 'PostgreSQL Disconnected';
+        }
+      } catch (e) {
+        pill.classList.add('disconnected');
+        text.textContent = 'Database Offline';
+      }
+    }
+
+    function showToast(message, isError = false) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      if (isError) toast.style.borderColor = 'var(--accent-rose)';
+      toast.textContent = message;
+      const container = document.getElementById('toastContainer');
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 400);
+      }, 3000);
+    }
 
     taskForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const btn = e.target.querySelector('button');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
       const title = document.getElementById('titleInput').value;
       const status = document.getElementById('statusInput').value;
       const description = document.getElementById('descInput').value;
-      await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, status, description })
-      });
-      taskForm.reset();
-      fetchTasks();
+
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, status, description })
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to create task');
+        }
+        
+        console.log('Task created in database successfully');
+        showToast('Task added to database!');
+        taskForm.reset();
+        await fetchTasks();
+      } catch (err) {
+        showToast(err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
     });
 
     editForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      await fetch('/api/tasks/' + editingId, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: document.getElementById('editTitle').value,
-          description: document.getElementById('editDesc').value,
-          status: document.getElementById('editStatus').value
-        })
-      });
-      closeModal();
-      fetchTasks();
+      try {
+        const res = await fetch('/api/tasks/' + editingId, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: document.getElementById('editTitle').value,
+            description: document.getElementById('editDesc').value,
+            status: document.getElementById('editStatus').value
+          })
+        });
+        if (!res.ok) throw new Error('Update failed');
+        showToast('Task updated');
+        closeModal();
+        await fetchTasks();
+      } catch (err) {
+        showToast(err.message, true);
+      }
     });
 
     document.getElementById('cancelEdit').onclick = closeModal;
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
 
     async function fetchTasks() {
-      const res = await fetch('/api/tasks');
-      tasks = await res.json();
-      document.getElementById('statTotal').textContent = tasks.length;
-      document.getElementById('statPending').textContent = tasks.filter(t => t.status === 'pending').length;
-      document.getElementById('statProgress').textContent = tasks.filter(t => t.status === 'in-progress').length;
-      document.getElementById('statDone').textContent = tasks.filter(t => t.status === 'completed').length;
+      try {
+        const res = await fetch('/api/tasks');
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to load tasks');
+        }
+        
+        tasks = await res.json();
+        document.getElementById('statTotal').textContent = tasks.length;
+        document.getElementById('statPending').textContent = tasks.filter(t => t.status === 'pending').length;
+        document.getElementById('statProgress').textContent = tasks.filter(t => t.status === 'in-progress').length;
+        document.getElementById('statDone').textContent = tasks.filter(t => t.status === 'completed').length;
 
-      if (tasks.length === 0) {
-        taskListArea.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg></div><div class="empty-title">No tasks yet</div><div class="empty-desc">Create your first task above to get started</div></div>';
-        return;
+        if (tasks.length === 0) {
+          taskListArea.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg></div><div class="empty-title">No tasks yet</div><div class="empty-desc">Create your first task above to get started</div></div>';
+          return;
+        }
+
+        taskListArea.innerHTML = '<table class="data-table"><thead><tr><th>Task</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="taskBody"></tbody></table>';
+        const tbody = document.getElementById('taskBody');
+        tbody.innerHTML = tasks.map(t => {
+          const statusLabel = t.status === 'in-progress' ? 'In Progress' : (t.status || 'pending').charAt(0).toUpperCase() + (t.status || 'pending').slice(1);
+          return '<tr>' +
+            '<td><div class="task-name">' + escapeHtml(t.title) + '</div><div class="task-description">' + escapeHtml(t.description || '') + '</div></td>' +
+            '<td><span class="pill pill-' + t.status + '" onclick="cycleStatus(' + t.id + ')">' + statusLabel + '</span></td>' +
+            '<td><span class="date-cell">' + new Date(t.created_at).toLocaleDateString() + '</span></td>' +
+            '<td><div class="action-group"><button class="btn btn-ghost btn-sm" onclick="openEdit(' + t.id + ')">Edit</button><button class="btn btn-destructive btn-sm" onclick="deleteTask(' + t.id + ')">Delete</button></div></td>' +
+            '</tr>';
+        }).join('');
+      } catch (err) {
+        console.error(err);
+        taskListArea.innerHTML = '<div class="empty-state"><div class="empty-title" style="color:var(--accent-rose)">Error loading tasks</div><div class="empty-desc">' + escapeHtml(err.message) + '</div><button class="btn btn-ghost btn-sm" style="margin-top:1rem" onclick="fetchTasks()">Retry</button></div>';
       }
-
-      taskListArea.innerHTML = '<table class="data-table"><thead><tr><th>Task</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="taskBody"></tbody></table>';
-      const tbody = document.getElementById('taskBody');
-      tbody.innerHTML = tasks.map(t => {
-        const statusLabel = t.status === 'in-progress' ? 'In Progress' : t.status.charAt(0).toUpperCase() + t.status.slice(1);
-        return '<tr>' +
-          '<td><div class="task-name">' + escapeHtml(t.title) + '</div><div class="task-description">' + escapeHtml(t.description || '') + '</div></td>' +
-          '<td><span class="pill pill-' + t.status + '" onclick="cycleStatus(' + t.id + ')">' + statusLabel + '</span></td>' +
-          '<td><span class="date-cell">' + new Date(t.created_at).toLocaleDateString() + '</span></td>' +
-          '<td><div class="action-group"><button class="btn btn-ghost btn-sm" onclick="openEdit(' + t.id + ')">Edit</button><button class="btn btn-destructive btn-sm" onclick="deleteTask(' + t.id + ')">Delete</button></div></td>' +
-          '</tr>';
-      }).join('');
     }
 
     function escapeHtml(str) {
+      if (!str) return '';
       const div = document.createElement('div');
       div.appendChild(document.createTextNode(str));
       return div.innerHTML;
@@ -816,18 +901,23 @@ const HTML_CONTENT = `
     async function cycleStatus(id) {
       const t = tasks.find(x => x.id === id);
       const next = { pending: 'in-progress', 'in-progress': 'completed', completed: 'pending' };
-      await fetch('/api/tasks/' + id, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: next[t.status] })
-      });
-      fetchTasks();
+      try {
+        await fetch('/api/tasks/' + id, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: next[t.status] })
+        });
+        fetchTasks();
+      } catch (e) { showToast('Update failed', true); }
     }
 
     async function deleteTask(id) {
       if (confirm('Delete this task?')) {
-        await fetch('/api/tasks/' + id, { method: 'DELETE' });
-        fetchTasks();
+        try {
+          await fetch('/api/tasks/' + id, { method: 'DELETE' });
+          showToast('Task deleted');
+          fetchTasks();
+        } catch (e) { showToast('Delete failed', true); }
       }
     }
 
@@ -853,41 +943,60 @@ app.get('/', (req, res) => res.send(HTML_CONTENT));
 
 app.get('/api/health', async (req, res) => {
   try {
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000));
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000));
     const query = pool.query('SELECT 1');
     await Promise.race([query, timeout]);
     res.status(200).json({ status: 'ok', database: 'connected' });
   } catch (err) {
-    res.status(200).json({ status: 'ok', database: 'disconnected', message: err.message });
+    res.status(200).json({ status: 'error', database: 'disconnected', message: err.message });
   }
 });
 
 app.get('/api/tasks', async (req, res) => {
-  const result = await pool.query('SELECT * FROM tasks ORDER BY created_at DESC');
-  res.json(result.rows);
+  try {
+    const result = await pool.query('SELECT * FROM tasks ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Database query failed', details: err.message });
+  }
 });
 
 app.post('/api/tasks', async (req, res) => {
-  const { title, description, status } = req.body;
-  const result = await pool.query('INSERT INTO tasks (title, description, status) VALUES ($1, $2, $3) RETURNING *', [title, description || '', status || 'pending']);
-  res.status(201).json(result.rows[0]);
+  try {
+    const { title, description, status } = req.body;
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+    const result = await pool.query('INSERT INTO tasks (title, description, status) VALUES ($1, $2, $3) RETURNING *', [title, description || '', status || 'pending']);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create task', details: err.message });
+  }
 });
 
 app.put('/api/tasks/:id', async (req, res) => {
-  const { id } = req.params; const { title, description, status } = req.body;
-  const result = await pool.query('UPDATE tasks SET title=COALESCE($1,title), description=COALESCE($2,description), status=COALESCE($3,status), updated_at=NOW() WHERE id=$4 RETURNING *', [title, description, status, id]);
-  res.json(result.rows[0]);
+  try {
+    const { id } = req.params;
+    const { title, description, status } = req.body;
+    const result = await pool.query('UPDATE tasks SET title=COALESCE($1,title), description=COALESCE($2,description), status=COALESCE($3,status), updated_at=NOW() WHERE id=$4 RETURNING *', [title, description, status, id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Update failed', details: err.message });
+  }
 });
 
 app.delete('/api/tasks/:id', async (req, res) => {
-  await pool.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
-  res.json({ message: 'Deleted' });
+  try {
+    await pool.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Delete failed', details: err.message });
+  }
 });
 
 // ── Database Init & Seeding ──────────────────────────────────
 async function initDB() {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query(`
       CREATE TABLE IF NOT EXISTS tasks (
         id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT,
@@ -905,16 +1014,17 @@ async function initDB() {
     }
     console.log('Database ready');
   } catch (err) {
-    console.error('DB Error:', err.message);
+    console.error('DB Initialization Error:', err.message);
+  } finally {
+    if (client) client.release();
   }
-  finally { client.release(); }
 }
 
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server listening on http://0.0.0.0:${PORT}`);
   if (process.env.DATABASE_URL) {
     console.log('DATABASE_URL found, initializing database...');
-    initDB().catch(err => console.error('Async DB Init Error:', err.message));
+    await initDB();
   } else {
     console.warn('No DATABASE_URL found in environment.');
   }
