@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Task Manager — a CRUD application deployed on Railway PaaS with PostgreSQL" />
+  <title>Task Manager | Railway PaaS Demo</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✅</text></svg>" />
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="container">
+    <header class="header">
+      <h1>Task Manager</h1>
+      <p>Full-stack CRUD app deployed on Railway PaaS</p>
+      <div class="badge">
+        <span class="dot"></span>
+        Connected to PostgreSQL
+      </div>
+    </header>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+      <div class="stat-item stat-total">
+        <div class="stat-value" id="statTotal">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat-item stat-pending">
+        <div class="stat-value" id="statPending">0</div>
+        <div class="stat-label">Pending</div>
+      </div>
+      <div class="stat-item stat-progress">
+        <div class="stat-value" id="statProgress">0</div>
+        <div class="stat-label">In Progress</div>
+      </div>
+      <div class="stat-item stat-done">
+        <div class="stat-value" id="statDone">0</div>
+        <div class="stat-label">Completed</div>
+      </div>
+    </div>
+
+    <!-- Create Task Form -->
+    <div class="card">
+      <div class="card-title"><span class="icon">➕</span> New Task</div>
+      <form id="taskForm">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="titleInput">Title</label>
+            <input type="text" id="titleInput" placeholder="What needs to be done?" required />
+          </div>
+          <div class="form-group">
+            <label for="statusInput">Status</label>
+            <select id="statusInput">
+              <option value="pending">Pending</option>
+              <option value="in-progress">In Progress</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label for="descInput">Description</label>
+            <textarea id="descInput" rows="2" placeholder="Optional details…"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Task</button>
+          <button type="reset" class="btn btn-secondary">Clear</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Tasks List -->
+    <div class="card">
+      <div class="card-title"><span class="icon">📋</span> Tasks</div>
+      <table class="tasks-table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="taskBody">
+          <tr>
+            <td colspan="4">
+              <div class="empty-state">
+                <div class="spinner"></div>
+                <p style="margin-top:0.75rem;">Loading tasks…</p>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-title">Edit Task</div>
+      <form id="editForm">
+        <div class="form-grid">
+          <div class="form-group full">
+            <label for="editTitle">Title</label>
+            <input type="text" id="editTitle" required />
+          </div>
+          <div class="form-group full">
+            <label for="editDesc">Description</label>
+            <textarea id="editDesc" rows="3"></textarea>
+          </div>
+          <div class="form-group full">
+            <label for="editStatus">Status</label>
+            <select id="editStatus">
+              <option value="pending">Pending</option>
+              <option value="in-progress">In Progress</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions" style="margin-top:1rem;">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-secondary" id="cancelEdit">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
